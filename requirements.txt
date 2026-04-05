@@ -1,0 +1,31 @@
+# ============================================================
+# 24AI636 - Mini Project 3: Autoencoder + WGAN
+# Requirements File
+# Compatible with: Google Colab & Local (RTX 3060)
+# ============================================================
+
+# Core Deep Learning
+torch==2.3.0
+torchvision==0.18.0
+
+# Data & Math
+numpy==1.26.4
+scipy==1.13.0
+Pillow==10.3.0
+pandas==2.2.2
+
+# Visualisation
+matplotlib==3.8.4
+seaborn==0.13.2
+
+# Latent Space Analysis
+scikit-learn==1.4.2
+
+# Progress Bars
+tqdm==4.66.4
+
+# FID Score Computation
+pytorch-fid==0.3.0
+
+# Notebook Support
+ipywidgets==8.1.2
