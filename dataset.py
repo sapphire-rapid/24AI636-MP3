@@ -1,6 +1,12 @@
 # ============================================================
 # 24AI636 - Mini Project 3: Autoencoder + WGAN
-# dataset.py — Local (RTX 3060 Optimized)
+# dataset.py — Kaggle + Local (RTX 3060) Compatible
+#
+# Supports TWO dataset structures:
+#   Local  : Brand/Year/image.jpg
+#   Kaggle : validation/Brand/Brand$$Model$$Year$$Colour$$...jpg
+#
+# Structure is auto-detected based on config.ENVIRONMENT
 # ============================================================
 
 import os
@@ -49,13 +55,18 @@ class DVMCarDataset(Dataset):
                  max_images=config.MAX_IMAGES,
                  transform=None):
 
-        self.root = root
+        self.root      = root
         self.transform = transform if transform else get_transforms()
-        self.samples = []
+        self.samples   = []
 
-        self._scan_dataset(max_images)
+        # Auto-detect structure based on environment
+        if config.ENVIRONMENT in ("kaggle",):
+            self._scan_dataset_flat(max_images)
+        else:
+            self._scan_dataset_nested(max_images)
 
-    def _scan_dataset(self, max_images):
+    # ── LOCAL structure: Brand/Year/image.jpg ──────────────
+    def _scan_dataset_nested(self, max_images):
         all_samples = []
 
         if not os.path.exists(self.root):
@@ -79,15 +90,54 @@ class DVMCarDataset(Dataset):
                         full_path = os.path.join(year_path, fname)
                         all_samples.append((full_path, brand, year))
 
-        # Shuffle before limiting (important for diversity)
         random.shuffle(all_samples)
-
         if max_images is not None:
             all_samples = all_samples[:max_images]
-
         self.samples = all_samples
+        print(f"[Dataset] Nested structure | "
+              f"Loaded {len(self.samples)} images from {self.root}")
 
-        print(f"[Dataset] Loaded {len(self.samples)} images from {self.root}")
+    # ── KAGGLE structure: Brand/Brand$$Model$$Year$$Colour$$...jpg ──
+    def _scan_dataset_flat(self, max_images):
+        """
+        Kaggle DVM-Car dataset has all images flat inside Brand folder.
+        Filename format: Brand$$Model$$Year$$Colour$$ID$$AdvID$$image_N.jpg
+        Year is extracted from filename for latent space labelling.
+        """
+        all_samples = []
+
+        if not os.path.exists(self.root):
+            raise FileNotFoundError(
+                f"DATA_ROOT not found: {self.root}\n"
+                f"Make sure the dataset is attached to your Kaggle notebook."
+            )
+
+        for brand in sorted(os.listdir(self.root)):
+            brand_path = os.path.join(self.root, brand)
+            if not os.path.isdir(brand_path):
+                continue
+
+            for fname in os.listdir(brand_path):
+                ext = os.path.splitext(fname)[1].lower()
+                if ext not in self.VALID_EXTENSIONS:
+                    continue
+
+                full_path = os.path.join(brand_path, fname)
+
+                # Extract year from filename: Brand$$Model$$Year$$...
+                try:
+                    year = fname.split('$$')[2]
+                except IndexError:
+                    year = 'unknown'
+
+                all_samples.append((full_path, brand, year))
+
+        random.shuffle(all_samples)
+        if max_images is not None:
+            all_samples = all_samples[:max_images]
+        self.samples = all_samples
+        print(f"[Dataset] Flat structure | "
+              f"Loaded {len(self.samples)} images from {self.root}")
 
     def __len__(self):
         return len(self.samples)
@@ -109,7 +159,7 @@ class DVMCarDataset(Dataset):
 
 
 # ─────────────────────────────────────────
-# 4. DATALOADER (LOCAL OPTIMIZED)
+# 4. DATALOADER
 # ─────────────────────────────────────────
 def get_dataloader(batch_size=config.AE_BATCH_SIZE,
                    max_images=config.MAX_IMAGES,
@@ -117,20 +167,22 @@ def get_dataloader(batch_size=config.AE_BATCH_SIZE,
 
     dataset = DVMCarDataset(max_images=max_images)
 
+    # Kaggle needs num_workers=2, local can handle 4
+    num_workers = 2 if config.ENVIRONMENT == "kaggle" else 4
+
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-
-        # 🔥 Local GPU optimizations
-        num_workers=4,               # change to 0 if Windows error
+        num_workers=num_workers,
         pin_memory=True,
         persistent_workers=True,
-
         drop_last=True
     )
 
-    print(f"[DataLoader] Batches: {len(loader)} | Batch size: {batch_size}")
+    print(f"[DataLoader] Batches: {len(loader)} | "
+          f"Batch size: {batch_size} | "
+          f"Total images: {len(dataset)}")
 
     return loader, dataset
 
@@ -145,20 +197,19 @@ if __name__ == "__main__":
     print("Running dataset sanity check...")
 
     loader, dataset = get_dataloader(batch_size=16, max_images=200)
+    images, labels  = next(iter(loader))
 
-    images, labels = next(iter(loader))
-
-    print(f"Batch shape : {images.shape}")
-    print(f"Pixel range : [{images.min():.2f}, {images.max():.2f}]")
-    print(f"Brands sample: {set(labels['brand'])}")
+    print(f"Batch shape  : {images.shape}")
+    print(f"Pixel range  : [{images.min():.2f}, {images.max():.2f}]")
+    print(f"Sample brands: {set(labels['brand'])}")
+    print(f"Sample years : {set(labels['year'])}")
 
     grid = vutils.make_grid(images, nrow=4, normalize=True)
-
     plt.figure(figsize=(8, 8))
     plt.imshow(grid.permute(1, 2, 0))
     plt.axis('off')
-    plt.title("Dataset Check")
+    plt.title("Dataset Sanity Check — DVM-Car")
     plt.savefig("dataset_check.png", bbox_inches='tight')
     plt.show()
 
-    print("Dataset sanity check complete.")
+    print("Done.")
