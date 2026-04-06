@@ -96,7 +96,7 @@ def train_gan():
                 critic_real = critic(real).reshape(-1)
                 critic_fake = critic(fake.detach()).reshape(-1)
 
-                gp = gradient_penalty(critic, real, fake.detach(), device)
+                gp = gradient_penalty(critic, real, fake, device)
 
                 loss_critic = (
                     -(torch.mean(critic_real) - torch.mean(critic_fake))
